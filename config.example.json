@@ -1,0 +1,15 @@
+{
+  "port": 8770,
+  "lan": true,
+  "lang": "auto",
+  "projects_dir": "~/.claude/projects",
+  "disks": [],
+  "active_minutes": 5,
+  "limits": {"vram_pct": 90, "disk_gb": 20, "chats": 3},
+  "heavy": [["blender", " -b"], ["blender", "--background"], ["ffmpeg", "nvenc"], ["ffmpeg", "libx264"],
+            ["node", "remotion"], ["python", "render"]],
+  "queue_script": "render_gate",
+  "project_markers": ["STATUS.md", "HANDOFF.md", "CLAUDE.md"],
+  "bridge_cmd": [],
+  "bridge_per_account": 3
+}

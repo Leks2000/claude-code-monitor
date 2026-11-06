@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Claude Code Monitor: live Claude Code token usage per session, active chats, CPU, RAM, GPU, VRAM and render jobs on one local page.">
+<meta name="theme-color" content="#0e1116">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230e1116'/%3E%3Cpath d='M2 11h3l2-6 2 8 2-4h3' stroke='%2358a6ff' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
+<title>Claude Code Monitor</title>
+<style>
+:root{--bg:#0e1116;--card:#161b22;--line:#252c36;--fg:#d7dde5;--dim:#7d8896;--acc:#58a6ff;--ok:#3fb950;--bad:#f85149;--badbg:#3a1518}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 system-ui,Segoe UI,Roboto,sans-serif}
+main{max-width:1400px;margin:0 auto;padding:10px 16px 24px}
+header{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+h1{font-size:15px;margin:0;font-weight:600}
+.dim{color:var(--dim)}
+#lang{margin-left:auto;background:none;border:1px solid var(--line);color:var(--dim);border-radius:5px;padding:1px 7px;font:inherit;cursor:pointer}
+#alerts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.alert{background:var(--badbg);color:#ffb3ae;border:1px solid var(--bad);border-radius:6px;padding:3px 8px;font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:8px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.tile .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.tile .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .s{color:var(--dim);font-size:11px}
+.tile.bad{border-color:var(--bad);background:var(--badbg)}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc)}
+.bad .bar i{background:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:8px}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+section.bad{border-color:var(--bad)}
+h2{font-size:12px;margin:0 0 6px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+h2.mt{margin-top:10px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+td,th{padding:3px 4px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
+th{color:var(--dim);font-weight:500;font-size:11px;border-top:0}
+td.n,th.n{text-align:right;white-space:nowrap}
+.trunc{max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
+.proj{color:var(--acc);white-space:nowrap}
+.tag{display:inline-block;padding:0 5px;border-radius:4px;background:var(--line);font-size:11px;white-space:nowrap}
+.tag.hot{background:#3b2a0b;color:#f0c674}
+.tag.ok{background:#12301b;color:#7ee2a0}
+.red{color:var(--bad);font-weight:600}
+.empty{color:var(--dim);padding:4px 0}
+.sub{font-size:11px;color:var(--dim)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:600px){.two{grid-template-columns:1fr}.tile .v{font-size:17px}.hide-m{display:none}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>Claude Code Monitor</h1><span class="dim" id="meta">…</span><button id="lang" title="RU / EN">EN</button></header>
+<div id="alerts"></div>
+<div class="tiles" id="tiles"></div>
+<div class="grid">
+  <section id="chats"></section>
+  <section id="work"></section>
+  <section id="tops"></section>
+  <section id="procs"></section>
+</div>
+</main>
+<script>
+const L10N = {
+en: {
+  title:'Claude Code Monitor', poll:'poll', ms:'ms', indexing:'indexing logs', MB:'MB', GB:'GB', loading:'collecting data…', offline:'no connection to the monitor',
+  cpu:'CPU', ram:'RAM', gpu:'GPU', vram:'VRAM', disk:'Disk', free_of:'free of', chats:'Chats', active_le:'active (limit', tokens:'Tokens', per_hour:'last hour · today', W:'W',
+  a_vram:v=>`VRAM ${v}%`, a_disk:(d,v)=>`Disk ${d}: ${v} GB free`, a_chats:v=>`Active chats: ${v}`,
+  chats_h:n=>`Claude Code sessions: <b class="CLS">${n}</b> active (log changed ≤ 5 min)`,
+  project:'Project', task:'Task', model:'Model', hour:'Hour', today:'Today', seen:'Seen', week:'Week', out:'Output', agents:'agents', none:'none',
+  tok_note:(h,d,o,w)=>`Tokens = input + cache + output. Total: hour ${h}, today ${d} (output ${o}), week ${w}.`,
+  top_h:'Top 5 sessions by tokens', d7:'last 7 days',
+  work_h:'What is running', what:'What', details:'Details', mem:'Mem.', running:'Running',
+  no_work:'No Blender, ffmpeg, Remotion, Python scripts or Roblox Studio running',
+  heavy_note:'● heavy render (by the "heavy" rules in config)',
+  queue_h:'Render queue', rendering_now:'Rendering now:', free:'free', waits:'Waiting', waiting_for:'Waiting for', queue_empty:'nobody in the queue',
+  ollama_h:'Ollama', ollama_off:'not running', ollama_idle:'running, no model loaded', unloads:'unloads at',
+  bridge_h:'Image accounts', every_min:'every minute', ready_acc:'Ready accounts', frames_now:'images now', next_free:'next frees at', all_by:'all by', img:'img',
+  procs_h:'Processes (grouped by name)', top_cpu:'top 8 by CPU', top_mem:'top 8 by memory', process:'Process', memory:'Memory',
+  mem_note:'Memory = private working set, like the Task Manager "Memory" column (refreshed every 30 s).',
+  modes:{render:'render', bg:'background', gui:'window', studio:'Studio (preview)', nowin:'no window (background)'},
+  ago:s=>s<60?s+' s':s<3600?Math.round(s/60)+' min':s<86400?Math.round(s/3600)+' h':Math.round(s/86400)+' d'
+},
+ru: {
+  title:'Монитор ПК', poll:'опрос', ms:'мс', indexing:'индексация логов', MB:'МБ', GB:'ГБ', loading:'собираю данные…', offline:'нет связи с монитором',
+  cpu:'CPU', ram:'RAM', gpu:'GPU', vram:'VRAM', disk:'Диск', free_of:'свободно из', chats:'Чаты', active_le:'активны (порог', tokens:'Токены', per_hour:'за час · сегодня', W:'Вт',
+  a_vram:v=>`VRAM ${v}%`, a_disk:(d,v)=>`Диск ${d}: свободно ${v} ГБ`, a_chats:v=>`Активных чатов: ${v}`,
+  chats_h:n=>`Чаты Claude: <b class="CLS">${n}</b> активно (лог менялся ≤5 мин)`,
+  project:'Проект', task:'Задача', model:'Модель', hour:'Час', today:'Сегодня', seen:'Был', week:'Неделя', out:'Выход', agents:'аг.', none:'нет',
+  tok_note:(h,d,o,w)=>`Токены = вход + кеш + выход. Всего: час ${h}, сегодня ${d} (выход ${o}), неделя ${w}.`,
+  top_h:'Топ-5 чатов по токенам', d7:'7 дней',
+  work_h:'Кто чем занят', what:'Что', details:'Подробно', mem:'Пам.', running:'Идёт',
+  no_work:'Blender, ffmpeg, Remotion, python-скрипты, Roblox Studio — ничего не запущено',
+  heavy_note:'● — тяжёлый рендер по правилам render_gate',
+  queue_h:'Очередь render_gate', rendering_now:'Рендер сейчас:', free:'свободно', waits:'Ждёт', waiting_for:'Ждёт уже', queue_empty:'в очереди никого',
+  ollama_h:'Ollama', ollama_off:'не запущена', ollama_idle:'запущена, модель не загружена', unloads:'выгрузится',
+  bridge_h:'Мост ChatGPT', every_min:'раз в минуту', ready_acc:'Готово аккаунтов', frames_now:'кадров сейчас', next_free:'следующий освободится в', all_by:'все к', img:'кадр.',
+  procs_h:'Процессы (сгруппированы по имени)', top_cpu:'топ-8 по CPU', top_mem:'топ-8 по памяти', process:'Процесс', memory:'Память',
+  mem_note:'Память — частный рабочий набор, как столбец «Память» в диспетчере задач (обновляется раз в 30 с).',
+  modes:{render:'рендер', bg:'фон', gui:'окно', studio:'Studio (черновик)', nowin:'окно не найдено (фоновый)'},
+  ago:s=>s<60?s+' с':s<3600?Math.round(s/60)+' мин':s<86400?Math.round(s/3600)+' ч':Math.round(s/86400)+' д'
+}};
+let LANG = null, T = L10N.en, last = null;
+const qs = new URLSearchParams(location.search).get('lang');
+function pickLang(cfg){
+  let l = qs || (()=>{try{return localStorage.getItem('ccm-lang')}catch(e){return null}})() || (cfg && cfg!=='auto' ? cfg : null) || ((navigator.language||'').startsWith('ru') ? 'ru' : 'en');
+  setLang(L10N[l] ? l : 'en');
+}
+function setLang(l){ LANG = l; T = L10N[l]; document.documentElement.lang = l; $('lang').textContent = l === 'ru' ? 'EN' : 'RU'; document.title = T.title; if(last) render(last); }
+const $ = id => document.getElementById(id);
+$('lang').onclick = () => { const l = LANG === 'ru' ? 'en' : 'ru'; try{localStorage.setItem('ccm-lang', l)}catch(e){} setLang(l); };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tok = n => n >= 1e9 ? (n/1e9).toFixed(2)+'B' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? Math.round(n/1e3)+'k' : String(n||0);
+const mb = m => m >= 1024 ? (m/1024).toFixed(1)+' '+T.GB : m+' '+T.MB;
+function tile(k, v, s, pct, bad){
+  return `<div class="tile${bad?' bad':''}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||''}</div>${pct!=null?`<div class="bar"><i style="width:${Math.min(100,pct)}%"></i></div>`:''}</div>`;
+}
+function chatRow(r, col){
+  const t = r.title ? `<b>${esc(r.title)}</b><div class="sub">${esc(r.first)}</div>` : esc(r.first);
+  return `<tr><td class="proj">${esc(r.project)}${r.agents?` <span class="tag">+${r.agents} ${T.agents}</span>`:''}</td>
+  <td class="trunc" title="${esc(r.first)}">${t}</td>${col.map(c => `<td class="n">${c(r)}</td>`).join('')}</tr>`;
+}
+function chatTable(rows, heads, col){
+  if(!rows.length) return `<div class="empty">${T.none}</div>`;
+  return `<table><tr><th>${T.project}</th><th>${T.task}</th>${heads.map(h=>`<th class="n">${h}</th>`).join('')}</tr>${rows.map(r=>chatRow(r,col)).join('')}</table>`;
+}
+function workWhat(x){ const m = x.mode ? T.modes[x.mode] : ''; return [m, x.what].filter(Boolean).join(' · ') || '—'; }
+function render(d){
+  last = d;
+  const s = d.sys, g = d.gpu, Lm = d.limits, ch = d.chats;
+  $('meta').textContent = `${d.host} · ${d.time} · ${T.poll} ${d.cost_ms} ${T.ms}` + (ch.indexing ? ` · ${T.indexing} ${ch.indexing[0]}/${ch.indexing[1]} ${T.MB}` : '');
+  $('alerts').innerHTML = d.alerts.map(a => `<span class="alert">⚠ ${esc(a.k==='vram'?T.a_vram(a.v):a.k==='disk'?T.a_disk(a.d,a.v):T.a_chats(a.v))}</span>`).join('');
+  let t = tile(T.cpu, s.cpu.toFixed(0)+'%', '', s.cpu);
+  t += tile(T.ram, s.ram_pct.toFixed(0)+'%', `${s.ram_used_gb} / ${s.ram_total_gb} ${T.GB}`, s.ram_pct, s.ram_pct > 90);
+  if(g.error) t += tile(T.gpu, '—', esc(g.error));
+  else {
+    t += tile(T.gpu, g.util.toFixed(0)+'%', `${esc(g.name)} · ${g.temp}°C${g.power?` · ${g.power.toFixed(0)} ${T.W}`:''}`, g.util);
+    t += tile(T.vram, g.vram_pct.toFixed(0)+'%', `${(g.vram_used/1024).toFixed(1)} / ${(g.vram_total/1024).toFixed(0)} ${T.GB}`, g.vram_pct, g.vram_pct > Lm.vram_pct);
+  }
+  for(const k of s.disks) t += tile(`${T.disk} ${esc(k.d)}`, k.free_gb.toFixed(0)+' '+T.GB, `${T.free_of} ${k.total_gb} ${T.GB}`, k.pct, k.free_gb < Lm.disk_gb);
+  t += tile(T.chats, ch.active.length, `${T.active_le} ${Lm.chats})`, null, ch.active.length > Lm.chats);
+  t += tile(T.tokens, tok(ch.total.hour), `${T.per_hour} ${tok(ch.total.day)}`);
+  $('tiles').innerHTML = t;
+
+  const badChats = ch.active.length > Lm.chats;
+  $('chats').className = badChats ? 'bad' : '';
+  $('chats').innerHTML = `<h2>${T.chats_h(ch.active.length).replace('CLS', badChats?'red':'')}</h2>` +
+    chatTable(ch.active, [T.model,T.hour,T.today,T.seen], [r=>`<span class="tag">${esc(r.model)}</span>`, r=>tok(r.hour), r=>tok(r.day), r=>T.ago(r.ago)]) +
+    `<div class="sub" style="margin-top:6px">${T.tok_note(tok(ch.total.hour), tok(ch.total.day), tok(ch.total.out_day), tok(ch.total.week))}</div>`;
+
+  $('tops').innerHTML = `<h2>${T.top_h}</h2><div class="sub">${T.today}</div>` +
+    chatTable(ch.top_day, [T.today,T.out,T.seen], [r=>tok(r.day), r=>tok(r.out_day), r=>T.ago(r.ago)]) +
+    `<div class="sub" style="margin-top:8px">${T.d7}</div>` + chatTable(ch.top_week, [T.week,T.seen], [r=>tok(r.week), r=>T.ago(r.ago)]);
+
+  let w = `<h2>${T.work_h}</h2>`;
+  w += s.work.length ? `<table><tr><th>${T.what}</th><th>${T.details}</th><th class="n">CPU</th><th class="n">${T.mem}</th><th class="n hide-m">${T.running}</th></tr>` +
+    s.work.map(x => `<tr><td><span class="tag${x.heavy?' hot':''}">${esc(x.kind)}${x.heavy?' ●':''}</span>${x.n>1?` <span class="dim">×${x.n}</span>`:''}</td><td class="trunc" title="${esc(workWhat(x))}">${esc(workWhat(x))}</td><td class="n">${x.cpu}%</td><td class="n">${mb(x.mem_mb)}</td><td class="n hide-m">${T.ago(x.age)}</td></tr>`).join('') + '</table>'
+    : `<div class="empty">${T.no_work}</div>`;
+  w += `<div class="sub" style="margin-top:6px">${T.heavy_note}</div>`;
+  if(d.queue){
+    w += `<h2 class="mt">${T.queue_h}</h2>`;
+    w += `<div>${T.rendering_now} ${s.rendering.length ? s.rendering.map(x=>`<span class="tag hot">${esc(x.kind)} ${x.pid}</span>`).join(' ') : `<span class="tag ok">${T.free}</span>`}</div>`;
+    w += s.gate.length ? `<table><tr><th>${T.waits}</th><th>${T.project}</th><th class="n">${T.waiting_for}</th></tr>` + s.gate.map(x => `<tr><td>${x.pid}${x.low?' <span class="tag">--low</span>':''}</td><td class="trunc">${esc(x.own||'—')}</td><td class="n">${T.ago(x.age)}</td></tr>`).join('') + '</table>' : `<div class="empty">${T.queue_empty}</div>`;
+  }
+  const o = d.ollama;
+  w += `<h2 class="mt">${T.ollama_h}</h2>` + (!o.on ? `<div class="empty">${T.ollama_off}</div>` : o.models.length ? o.models.map(m => `<span class="tag hot">${esc(m.name)}</span> ${mb(m.vram_mb)} VRAM, ${T.unloads} ${esc(m.until)}`).join('<br>') : `<div class="empty">${T.ollama_idle}</div>`);
+  const b = d.bridge;
+  if(b){
+    w += `<h2 class="mt">${T.bridge_h} <span class="dim">(${esc(b.t||'—')}, ${T.every_min})</span></h2>`;
+    if(b.error) w += `<div class="empty">${esc(b.error)}</div>`;
+    else {
+      w += `<div>${T.ready_acc}: <b>${b.ready}/${b.total}</b> · ${T.frames_now}: <b class="${b.frames?'':'red'}">${b.frames}</b>` +
+        (b.next_free ? ` · ${T.next_free} <b>${esc(b.next_free)}</b>, ${T.all_by} ${esc(b.all_free)}` : '') + '</div>';
+      w += '<div class="sub" style="margin-top:3px">' + b.accounts.map(a => `<span class="tag ${a.ready?'ok':''}" style="margin:1px">${esc(a.acc)}${a.current?' *':''} ${a.ready ? (a.left ?? '')+' '+T.img : esc(a.until||a.state)}</span>`).join(' ') + '</div>';
+    }
+  }
+  $('work').innerHTML = w;
+
+  const pt = (rows, key) => `<table><tr><th>${T.process}</th><th class="n">CPU</th><th class="n">${T.memory}</th></tr>` +
+    rows.map(r => `<tr><td class="trunc">${esc(r.name)}${r.n>1?` <span class="dim">×${r.n}</span>`:''}</td><td class="n${key==='cpu'?'':' dim'}">${r.cpu}%</td><td class="n${key==='mem'?'':' dim'}">${mb(r.mem_mb)}</td></tr>`).join('') + '</table>';
+  $('procs').innerHTML = `<h2>${T.procs_h}</h2><div class="two"><div><div class="sub">${T.top_cpu}</div>${pt(s.top_cpu,'cpu')}</div><div><div class="sub">${T.top_mem}</div>${pt(s.top_mem,'mem')}</div></div>
+  <div class="sub" style="margin-top:6px">${T.mem_note}</div>`;
+}
+async function tick(){
+  try{
+    const r = await fetch('/api', {cache:'no-store'});
+    const d = await r.json();
+    if(!LANG) pickLang(d.lang);
+    if(d.ok) render(d); else $('meta').textContent = T.loading;
+  }catch(e){ $('meta').textContent = T.offline; }
+}
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# local state and personal settings
+cache.json
+cache.tmp
+monitor.log
+config.json
+STATUS.md
+screenshot_*.jpg
+__pycache__/
+*.pyc
