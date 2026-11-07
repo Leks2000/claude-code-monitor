@@ -2,6 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Feed } from '../types'
 
+const RU = { options: { lang: 'ru' } } as const
+
 const PANE = {
   plugin: 'pc-monitor',
   component: 'Pane',
@@ -39,7 +41,7 @@ const FEED: Feed = {
   },
 }
 
-test('the pane draws a snapshot on every surface', async ($, on) => {
+test('the pane draws a snapshot on every surface', RU, async ($, on) => {
   on('state.get', () => ({ value: { value: FEED, version: 1 } }))
 
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
@@ -63,7 +65,7 @@ const stateOf = (expanded: boolean, bandOff = false) => (_: unknown, e: { key: s
   return { value: { value: v[e.key], version: 1 } }
 }
 
-test('terminal: the band is one text row with the toggle at its end', async ($, on) => {
+test('terminal: the band is one text row with the toggle at its end', RU, async ($, on) => {
   on('state.get', stateOf(false))
 
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -76,7 +78,7 @@ test('terminal: the band is one text row with the toggle at its end', async ($, 
   await ui.unmount()
 })
 
-test('desktop: the band is one SVG row, the alert in its alt, the toggle beside it', async ($, on) => {
+test('desktop: the band is one SVG row, the alert in its alt, the toggle beside it', RU, async ($, on) => {
   on('state.get', stateOf(false))
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
@@ -92,7 +94,7 @@ test('desktop: the band is one SVG row, the alert in its alt, the toggle beside 
   await ui.unmount()
 })
 
-test('expanded: chart or text graphs, chats, jobs, processes, the toggle still in the top row', async ($, on) => {
+test('expanded: chart or text graphs, chats, jobs, processes, the toggle still in the top row', RU, async ($, on) => {
   on('state.get', stateOf(true))
 
   const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -110,7 +112,7 @@ test('expanded: chart or text graphs, chats, jobs, processes, the toggle still i
   }
 })
 
-test('the right pane has a close button', async ($, on) => {
+test('the right pane has a close button', RU, async ($, on) => {
   on('state.get', stateOf(false))
   let closed = ''
   on('ui.close', (_, e) => {
@@ -124,7 +126,7 @@ test('the right pane has a close button', async ($, on) => {
   await ui.unmount()
 })
 
-test('/monitor off hides the band', async ($, on) => {
+test('/monitor off hides the band', RU, async ($, on) => {
   on('state.get', stateOf(false, true))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -136,11 +138,27 @@ test('/monitor off hides the band', async ($, on) => {
   await ui.unmount()
 })
 
-test('with no snapshot the pane offers to start the server', async ($, on) => {
+test('with no snapshot the pane offers to start the server', RU, async ($, on) => {
   on('state.get', () => ({ value: { value: { snap: null, error: 'HTTP 502', at: 1 }, version: 1 } }))
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await ui.find({ type: 'Text', text: /не отвечает/ }))?.text).toContain('HTTP 502')
   expect(await ui.find({ type: 'Button', key: 'start' })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('English by default: the line and the expanded view', async ($, on) => {
+  on('state.get', stateOf(true))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const svg = (await ui.find({ type: 'Svg' })) as unknown as { props?: { source?: string } } | undefined
+  const src = String(svg?.props?.source ?? '')
+  expect(src).toContain('chats')
+  expect(src).toContain('/h')
+  expect(await ui.find({ type: 'Text', text: /CHATS 1/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /RUNNING/ })).toBeTruthy()
+  const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await term.find({ type: 'Text', text: /CPU 42%/ }))?.text).toContain('chats 1')
+  await term.unmount()
   await ui.unmount()
 })

@@ -1,12 +1,24 @@
 {
   "name": "pc-monitor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A one-line monitor above the Claude Code prompt: CPU, GPU, VRAM and RAM with live graphs, free disk space, active sessions and tokens per hour, the busiest render job. Expands in place for charts and details.",
-  "author": { "name": "Leks2000", "url": "https://github.com/Leks2000" },
+  "author": {
+    "name": "Leks2000",
+    "url": "https://github.com/Leks2000"
+  },
   "homepage": "https://github.com/Leks2000/claude-code-monitor",
   "repository": "https://github.com/Leks2000/claude-code-monitor",
   "license": "MIT",
-  "keywords": ["monitor", "tokens", "usage", "gpu", "vram", "cpu", "dashboard", "status"],
+  "keywords": [
+    "monitor",
+    "tokens",
+    "usage",
+    "gpu",
+    "vram",
+    "cpu",
+    "dashboard",
+    "status"
+  ],
   "userConfig": {
     "server_url": {
       "type": "string",
@@ -19,6 +31,16 @@
       "title": "Start command",
       "description": "Optional: what the \"Start server\" button runs, e.g. C:\\tools\\claude-code-monitor\\start_monitor.bat --quiet",
       "default": ""
+    },
+    "lang": {
+      "type": "string",
+      "title": "Language",
+      "description": "Labels of the line and the pane: en or ru",
+      "default": "en",
+      "options": [
+        "en",
+        "ru"
+      ]
     }
   },
   "types": "./types/index.d.ts"

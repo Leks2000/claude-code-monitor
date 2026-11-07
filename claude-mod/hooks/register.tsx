@@ -1,15 +1,17 @@
 import type { ElementTable, EngineInterface, Register } from 'claude-code'
 
 import type { Chat, Feed, Hist, Job, Proc, Snap } from '../types'
+import { LANGS } from './i18n'
+import type { Strings } from './i18n'
 import { chart, line } from './svg'
 
 // The band and the pane read the local Claude Code Monitor server (monitor.py) instead of polling processes
 // themselves: one small local HTTP request a second, the heavy lifting stays in the Python server.
-// Both settings come from the plugin's userConfig (plugin.json): server_url and start_command.
+// All settings come from the plugin's userConfig (plugin.json): server_url, start_command, lang.
 let WEB = 'http://127.0.0.1:8770'
 let START = ''
+let T: Strings = LANGS.en!
 const PANE = 'monitor-pane'
-const TITLE = 'Монитор'
 const EVERY_MS = 1000
 
 // The last poll, kept in the session's state: a write redraws the band and the pane.
@@ -24,8 +26,14 @@ const NO_HIST: Hist = { cpu: [], gpu: [], vram: [], ram: [] }
 const tok = (n: number): string =>
   n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n || 0)
 const ago = (s: number): string =>
-  s < 60 ? s + 'с' : s < 3600 ? Math.round(s / 60) + 'м' : s < 86400 ? Math.round(s / 3600) + 'ч' : Math.round(s / 86400) + 'д'
-const gb = (mb: number): string => (mb >= 1024 ? (mb / 1024).toFixed(1) + 'Г' : mb + 'М')
+  s < 60
+    ? s + T.units.s
+    : s < 3600
+      ? Math.round(s / 60) + T.units.m
+      : s < 86400
+        ? Math.round(s / 3600) + T.units.h
+        : Math.round(s / 86400) + T.units.d
+const gb = (mb: number): string => (mb >= 1024 ? (mb / 1024).toFixed(1) + T.units.gb : mb + T.units.mb)
 const bar = (pct: number, cells = 10): string => {
   const full = Math.max(0, Math.min(cells, Math.round((pct / 100) * cells)))
   return '█'.repeat(full) + '░'.repeat(cells - full)
@@ -40,13 +48,7 @@ const spark = (a: number[], n: number): string =>
     .join('')
     .padStart(n, ' ')
 
-const MODES: Record<string, string> = {
-  render: 'рендер',
-  bg: 'фон',
-  gui: 'окно',
-  studio: 'Studio',
-  nowin: 'без окна',
-}
+const mode = (m?: string): string => (m ? T.modes[m] ?? m : '')
 
 /** The /api answer, cut to what the pane draws. */
 function trim(d: any): Snap {
@@ -115,8 +117,8 @@ function trim(d: any): Snap {
 
 function alertText(a: Snap['alerts'][number]): string {
   if (a.k === 'vram') return `VRAM ${a.v}%`
-  if (a.k === 'disk') return `диск ${a.d}: ${a.v} ГБ`
-  return `чатов ${a.v}`
+  if (a.k === 'disk') return T.alertDisk(a.d ?? '', a.v)
+  return T.alertChats(a.v)
 }
 
 /** One poll of the monitor's /api: the feed the band and the pane draw from. */
@@ -126,7 +128,7 @@ async function poll($: EngineInterface): Promise<void> {
     const r = await $.http.fetch(WEB + '/api')
     if (!r.ok) throw new Error('HTTP ' + r.status)
     const d = JSON.parse(r.text)
-    if (!d.ok) throw new Error('монитор ещё собирает данные')
+    if (!d.ok) throw new Error(T.collecting)
     f = { snap: trim(d), error: null, at: Date.now() }
   } catch (err) {
     const { value: old = EMPTY } = await $.state.get(FEED)
@@ -150,11 +152,12 @@ export const register: Register = (on, options) => {
   const url = typeof options.server_url === 'string' ? options.server_url.trim().replace(/\/+$/, '') : ''
   WEB = url || WEB
   START = typeof options.start_command === 'string' ? options.start_command.trim() : ''
+  T = LANGS[typeof options.lang === 'string' ? options.lang.trim().toLowerCase() : ''] ?? LANGS.en!
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'monitor',
-      description: 'Монитор ПК: /monitor — подробная панель, /monitor off|on — спрятать или вернуть полоску',
+      description: T.cmdDesc,
     })
     $.ui.status(undefined) // the band above the prompt replaced the old status line
     void $.ui.close({ id: PANE }) // the detailed pane opens only on demand now
@@ -167,13 +170,13 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'monitor' }, async ($, e) => {
     const arg = (e.args ?? '').trim()
-    if (arg === 'web') return { text: `Монитор в браузере: ${WEB}` }
+    if (arg === 'web') return { text: T.webAt(WEB) }
     if (arg === 'off' || arg === 'on') {
       await $.state.set(BAND_OFF, arg === 'off')
-      return { text: arg === 'off' ? 'Полоска монитора спрятана: /monitor on вернёт.' : 'Полоска монитора включена.' }
+      return { text: arg === 'off' ? T.bandOff : T.bandOn }
     }
-    await $.ui.open({ id: PANE, title: TITLE })
-    return { text: 'Подробная панель монитора открыта.' }
+    await $.ui.open({ id: PANE, title: T.title })
+    return { text: T.paneOpened }
   })
 
   // The band: one row right above the prompt, refreshed every second. The ▾/▴ toggle stays at its right end;
@@ -186,19 +189,19 @@ export const register: Register = (on, options) => {
     const { value: expanded = false } = await $.state.get(EXPANDED)
     const s = f.snap
     const openPane = () => {
-      void $.ui.open({ id: PANE, title: TITLE })
+      void $.ui.open({ id: PANE, title: T.title })
     }
     const toggle = () => {
       void $.state.set(EXPANDED, !expanded)
     }
-    const toggleBtn = <Button key="toggle" label={expanded ? '▴ Свернуть' : '▾ Ещё'} onPress={toggle} />
+    const toggleBtn = <Button key="toggle" label={expanded ? T.less : T.more} onPress={toggle} />
     if (!s) {
       return (
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
           <Text color="warning" wrap="truncate-end">
-            🖥 монитор не отвечает{f.error ? `: ${f.error}` : ''}
+            🖥 {T.noAnswer}{f.error ? `: ${f.error}` : ''}
           </Text>
-          <Button key="more" label="Панель" onPress={openPane} />
+          <Button key="more" label={T.pane} onPress={openPane} />
         </Box>
       )
     }
@@ -209,17 +212,17 @@ export const register: Register = (on, options) => {
     const g = s.gpu
     const heavy = s.work.filter(w => w.heavy)
     const job = heavy[0] ?? s.work.find(w => w.cpu >= 5)
-    const jobText = job ? `${job.kind} ${[job.mode ? MODES[job.mode] ?? job.mode : '', job.what].filter(Boolean).join(' ')}` : ''
+    const jobText = job ? `${job.kind} ${[job.mode ? mode(job.mode) : '', job.what].filter(Boolean).join(' ')}` : ''
     const alt =
       `CPU ${Math.round(s.cpu)}%` +
       (g ? `, GPU ${Math.round(g.util)}%, VRAM ${Math.round(g.vram_pct)}%` : '') +
-      `, RAM ${Math.round(s.ram_pct)}%, чатов ${s.active.length}, ${tok(s.total.hour)} токенов за час` +
-      (s.alerts.length ? `. Внимание: ${s.alerts.map(alertText).join(', ')}` : '')
+      `, RAM ${Math.round(s.ram_pct)}%, ${T.altTail(s.active.length, tok(s.total.hour))}` +
+      (s.alerts.length ? `. ${T.alert}: ${s.alerts.map(alertText).join(', ')}` : '')
 
     const row = Svg ? (
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
         <Svg
-          source={line(s, hist, { chats: s.active.length, perHour: tok(s.total.hour), today: tok(s.total.day), job: jobText, jobHeavy: !!heavy.length, frames: s.bridge?.frames ?? null })}
+          source={line(s, hist, { chats: s.active.length, perHour: tok(s.total.hour), today: tok(s.total.day), job: jobText, jobHeavy: !!heavy.length, frames: s.bridge?.frames ?? null }, T)}
           alt={alt}
         />
       </Box>
@@ -228,11 +231,11 @@ export const register: Register = (on, options) => {
         {`CPU ${Math.round(s.cpu)}%`}
         {g ? <Text color={g.vram_pct > L.vram_pct ? 'error' : undefined}>{`  GPU ${Math.round(g.util)}%  VRAM ${Math.round(g.vram_pct)}%`}</Text> : ''}
         {`  RAM ${Math.round(s.ram_pct)}%  `}
-        <Text dimColor>{s.disks.map(k => `${k.d} ${Math.round(k.free_gb)}`).join(' ')} ГБ  </Text>
-        <Text color={s.active.length > L.chats ? 'error' : undefined}>{`чаты ${s.active.length}`}</Text>
-        <Text dimColor>{`  ${tok(s.total.hour)}/ч`}</Text>
+        <Text dimColor>{s.disks.map(k => `${k.d} ${Math.round(k.free_gb)}`).join(' ')} {T.gb}  </Text>
+        <Text color={s.active.length > L.chats ? 'error' : undefined}>{`${T.chats} ${s.active.length}`}</Text>
+        <Text dimColor>{`  ${tok(s.total.hour)}${T.perHour}`}</Text>
         {jobText ? <Text color={heavy.length ? 'warning' : undefined}>{`  ${heavy.length ? '● ' : ''}${cut(jobText, 30)}`}</Text> : ''}
-        {s.bridge ? <Text dimColor>{`  мост ${s.bridge.frames}`}</Text> : ''}
+        {s.bridge ? <Text dimColor>{`  ${T.bridge} ${s.bridge.frames}`}</Text> : ''}
       </Text>
     )
 
@@ -267,11 +270,11 @@ export const register: Register = (on, options) => {
       )
       details = (
         <Box flexDirection="column" gap={1}>
-          {Svg ? <Svg source={chart(s, hist)} alt={`График за минуту: ${alt}`} /> : textGraphs}
+          {Svg ? <Svg source={chart(s, hist, T)} alt={`${T.chartAlt}: ${alt}`} /> : textGraphs}
           <Box flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={1}>
             <Box flexDirection="column" flexGrow={1} minWidth={30}>
-              {head(`ЧАТЫ ${s.active.length}`, s.active.length > L.chats)}
-              {s.active.length === 0 && <Text dimColor>нет активных</Text>}
+              {head(T.chatsHead(s.active.length), s.active.length > L.chats)}
+              {s.active.length === 0 && <Text dimColor>{T.noActive}</Text>}
               {s.active.map(c => (
                 <Box flexDirection="row" justifyContent="space-between" gap={1}>
                   <Text wrap="truncate-end">
@@ -281,20 +284,21 @@ export const register: Register = (on, options) => {
                     <Text dimColor> {cut(c.title || c.first, half)}</Text>
                   </Text>
                   <Text tabular dimColor>
-                    {tok(c.hour)}/ч · {ago(c.ago)}
+                    {tok(c.hour)}
+                    {T.perHour} · {ago(c.ago)}
                   </Text>
                 </Box>
               ))}
             </Box>
             <Box flexDirection="column" flexGrow={1} minWidth={30}>
-              {head('ЗАНЯТО')}
-              {s.work.length === 0 && <Text dimColor>ничего не запущено</Text>}
+              {head(T.running)}
+              {s.work.length === 0 && <Text dimColor>{T.nothing}</Text>}
               {s.work.slice(0, 4).map(j => (
                 <Box flexDirection="row" justifyContent="space-between" gap={1}>
                   <Text wrap="truncate-end" color={j.heavy ? 'warning' : undefined}>
                     {j.heavy ? '● ' : ''}
                     {j.kind}
-                    <Text dimColor> {[j.mode ? MODES[j.mode] ?? j.mode : '', j.what].filter(Boolean).join(' ')}</Text>
+                    <Text dimColor> {[j.mode ? mode(j.mode) : '', j.what].filter(Boolean).join(' ')}</Text>
                   </Text>
                   <Text tabular dimColor>
                     {j.cpu}% · {gb(j.mem_mb)}
@@ -313,15 +317,15 @@ export const register: Register = (on, options) => {
                   .join(' · ')}
               </Text>
               <Text dimColor wrap="truncate-end">
-                очередь {s.rendering ? `рендерит ${s.rendering}` : 'свободна'}
-                {s.gate.length ? `, ждут ${s.gate.length}` : ''}
-                {' · '}Ollama {s.ollama ? (s.ollama.length ? s.ollama.map(o => o.name).join(', ') : 'пусто') : 'выкл'}
-                {s.bridge ? ` · мост ${s.bridge.ready}/${s.bridge.total}, ${s.bridge.frames} кадр.${s.bridge.next_free ? `, след. ${s.bridge.next_free}` : ''}` : ''}
+                {T.queue} {s.rendering ? T.rendering(s.rendering) : T.queueFree}
+                {s.gate.length ? T.waiting(s.gate.length) : ''}
+                {' · '}Ollama {s.ollama ? (s.ollama.length ? s.ollama.map(o => o.name).join(', ') : T.ollamaEmpty) : T.ollamaOff}
+                {s.bridge ? T.bridgeLine(s.bridge.ready, s.bridge.total, s.bridge.frames, s.bridge.next_free) : ''}
               </Text>
             </Box>
           </Box>
           <Box flexDirection="row" justifyContent="flex-end">
-            <Button key="more" label="Открыть панелью справа" onPress={openPane} />
+            <Button key="more" label={T.openPane} onPress={openPane} />
           </Box>
         </Box>
       )
@@ -331,7 +335,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" gap={expanded ? 1 : 0}>
         <Box flexDirection="row" alignItems="center" gap={1}>
           {row}
-          {f.error && <Text color="warning">нет связи</Text>}
+          {f.error && <Text color="warning">{T.offline}</Text>}
           {toggleBtn}
         </Box>
         {details}
@@ -346,25 +350,28 @@ export const register: Register = (on, options) => {
     const cols = Math.max(30, e.props.bodyColumns ?? 48)
     const startServer = () => {
       if (!START) {
-        $.ui.toast('Запустите monitor.py (или задайте start_command в настройках плагина)')
+        $.ui.toast(T.startHint)
         return
       }
       void $.process.run(['cmd', '/c', START]).catch(() => undefined)
-      $.ui.toast('Запускаю монитор…')
+      $.ui.toast(T.starting)
     }
     const close = () => {
       void $.ui.close({ id: PANE })
     }
-    const closeBtn = <Button key="close" label="✕ Закрыть" onPress={close} />
+    const closeBtn = <Button key="close" label={T.close} onPress={close} />
 
     if (!s) {
       return (
         <Box flexDirection="column" gap={1}>
-          <Text color="warning">Монитор не отвечает{f.error ? `: ${f.error}` : ''}.</Text>
-          <Text dimColor>Сервер monitor.py должен работать на 127.0.0.1:8770.</Text>
+          <Text color="warning">
+            {T.noAnswer}
+            {f.error ? `: ${f.error}` : ''}
+          </Text>
+          <Text dimColor>{T.serverAt(WEB)}</Text>
           <Box flexDirection="row" gap={2}>
             <Button key="start" variant="primary" onPress={startServer}>
-              Запустить сервер
+              {T.startServer}
             </Button>
             {closeBtn}
           </Box>
@@ -373,7 +380,7 @@ export const register: Register = (on, options) => {
     }
 
     const L = s.limits
-    const stale = f.error ? ` · нет связи: ${f.error}` : ''
+    const stale = f.error ? ` · ${T.offline}: ${f.error}` : ''
     const metric = (label: string, pct: number, tail: string, bad = false) => (
       <Box flexDirection="row" gap={1}>
         <Text tabular>{label.padEnd(5)}</Text>
@@ -393,7 +400,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" justifyContent="space-between" gap={1}>
           <Text color="claude" bold wrap="truncate-end">
             {c.project}
-            {c.agents ? ` +${c.agents}аг` : ''}
+            {c.agents ? ` +${c.agents}${T.units.agents}` : ''}
           </Text>
           <Text tabular dimColor>
             {right}
@@ -410,7 +417,7 @@ export const register: Register = (on, options) => {
           {w.heavy ? '● ' : ''}
           {w.kind}
           {w.n > 1 ? ` ×${w.n}` : ''}
-          <Text dimColor> {[w.mode ? MODES[w.mode] ?? w.mode : '', w.what].filter(Boolean).join(' · ')}</Text>
+          <Text dimColor> {[w.mode ? mode(w.mode) : '', w.what].filter(Boolean).join(' · ')}</Text>
         </Text>
         <Text tabular dimColor>
           {w.cpu}% {gb(w.mem_mb)}
@@ -453,68 +460,70 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="column">
           {metric('CPU', s.cpu, '')}
-          {metric('RAM', s.ram_pct, `${s.ram_used_gb}/${s.ram_total_gb} ГБ`, s.ram_pct > 90)}
+          {metric('RAM', s.ram_pct, `${s.ram_used_gb}/${s.ram_total_gb} ${T.gb}`, s.ram_pct > 90)}
           {s.gpu && metric('GPU', s.gpu.util, `${s.gpu.temp}°C`)}
           {s.gpu &&
             metric(
               'VRAM',
               s.gpu.vram_pct,
-              `${(s.gpu.vram_used / 1024).toFixed(1)}/${(s.gpu.vram_total / 1024).toFixed(0)} ГБ`,
+              `${(s.gpu.vram_used / 1024).toFixed(1)}/${(s.gpu.vram_total / 1024).toFixed(0)} ${T.gb}`,
               s.gpu.vram_pct > L.vram_pct,
             )}
           <Text tabular>
             {s.disks.map(k => (
               <Text color={k.free_gb < L.disk_gb ? 'error' : undefined}>
-                {k.d}: {Math.round(k.free_gb)} ГБ{'  '}
+                {k.d}: {Math.round(k.free_gb)} {T.gb}
+                {'  '}
               </Text>
             ))}
           </Text>
         </Box>
 
         <Box flexDirection="column">
-          {head(`ЧАТЫ: ${s.active.length} активно`, chatsBad)}
+          {head(T.paneChats(s.active.length), chatsBad)}
           <Text dimColor>
-            час {tok(s.total.hour)} · сегодня {tok(s.total.day)} · выход {tok(s.total.out_day)}
+            {T.paneTotals(tok(s.total.hour), tok(s.total.day), tok(s.total.out_day))}
           </Text>
-          {s.active.length === 0 && <Text dimColor>нет активных</Text>}
-          {s.active.map(c => chatRow(c, `${tok(c.hour)}/ч ${tok(c.day)} · ${ago(c.ago)}`))}
+          {s.active.length === 0 && <Text dimColor>{T.noActive}</Text>}
+          {s.active.map(c => chatRow(c, `${tok(c.hour)}${T.perHour} ${tok(c.day)} · ${ago(c.ago)}`))}
         </Box>
 
         <Box flexDirection="column">
-          {head('КТО ЧЕМ ЗАНЯТ')}
-          {s.work.length === 0 && <Text dimColor>ничего тяжёлого не запущено</Text>}
+          {head(T.paneRunning)}
+          {s.work.length === 0 && <Text dimColor>{T.paneNothing}</Text>}
           {s.work.slice(0, 8).map(job)}
           <Text dimColor>
-            очередь: {s.rendering ? `рендерит ${s.rendering}` : 'свободно'}
-            {s.gate.length ? ` · ждут ${s.gate.length}` : ''}
-            {' · '}Ollama: {s.ollama ? (s.ollama.length ? s.ollama.map(m => `${m.name} ${gb(m.vram_mb)}`).join(', ') : 'пусто') : 'выкл'}
+            {T.queue}: {s.rendering ? T.rendering(s.rendering) : T.queueFree}
+            {s.gate.length ? T.waiting(s.gate.length) : ''}
+            {' · '}Ollama:{' '}
+            {s.ollama ? (s.ollama.length ? s.ollama.map(m => `${m.name} ${gb(m.vram_mb)}`).join(', ') : T.ollamaEmpty) : T.ollamaOff}
           </Text>
           {s.bridge && (
             <Text dimColor>
-              мост ChatGPT: {s.bridge.ready}/{s.bridge.total} акк., кадров{' '}
+              {T.paneBridge(s.bridge.ready, s.bridge.total)}
               <Text color={s.bridge.frames ? 'success' : 'error'} bold>
                 {s.bridge.frames}
               </Text>
-              {s.bridge.next_free ? `, след. в ${s.bridge.next_free}` : ''}
+              {s.bridge.next_free ? T.paneNext(s.bridge.next_free) : ''}
             </Text>
           )}
         </Box>
 
         <Box flexDirection="column">
-          {head('ТОП-5 СЕГОДНЯ')}
+          {head(T.top5)}
           {s.top_day.map(c => chatRow(c, `${tok(c.day)} · ${ago(c.ago)}`))}
         </Box>
 
         <Box flexDirection="column">
-          {head('ПРОЦЕССЫ: CPU')}
+          {head(T.procCpu)}
           {procs(s.top_cpu, 'cpu')}
         </Box>
         <Box flexDirection="column">
-          {head('ПРОЦЕССЫ: ПАМЯТЬ')}
+          {head(T.procMem)}
           {procs(s.top_mem, 'mem')}
         </Box>
 
-        <Link href={WEB} label="Полная версия в браузере" />
+        <Link href={WEB} label={T.fullWeb} />
       </Box>
     )
   })

@@ -25,6 +25,25 @@ Nothing is sent anywhere. The server answers only `localhost` and private home-n
 
 ## Install
 
+### The quick way: let Claude do it
+
+Paste this into Claude Code (the desktop app or the terminal) and it installs both parts:
+
+```text
+Install Claude Code Monitor for me from https://github.com/Leks2000/claude-code-monitor
+1. Clone the repository into a folder in my home directory, then run: pip install -r requirements.txt
+2. Start "python monitor.py" in the background and check that http://127.0.0.1:8770/api answers.
+3. On Windows, run: powershell -ExecutionPolicy Bypass -File install_autostart.ps1 (so it starts with the PC).
+4. Install the plugin for every session:
+   claude plugin marketplace add Leks2000/claude-code-monitor
+   claude plugin install pc-monitor@leks2000-tools --scope user --config lang=en --config "start_command=<full path to start_monitor.bat> --quiet"
+5. Tell me when it is done; I will open a new chat to see the monitor line.
+```
+
+Use `lang=ru` for Russian labels. Leave out `start_command` on macOS and Linux.
+
+If you prefer to do it by hand, follow the two steps below.
+
 ### 1. Run the server
 
 You need Python 3.9 or newer.
@@ -65,15 +84,14 @@ Optional settings, in `/plugin configure pc-monitor` or via `--config KEY=VALUE`
 |---|---|---|
 | `server_url` | `http://127.0.0.1:8770` | where `monitor.py` runs |
 | `start_command` | empty | what the **Start server** button runs, for example `C:\tools\claude-code-monitor\start_monitor.bat --quiet` |
+| `lang` | `en` | labels of the line and the pane: `en` or `ru` |
 
 ### Using it
 
-- **▾ Ещё** expands the line in place: a one-minute chart, active sessions with tokens per hour, running jobs, top processes, the render queue. **▴ Свернуть** closes it again. The button stays at the right end of the line in both states.
-- **Открыть панелью справа**, at the bottom of the expanded view, opens the same data as a side pane. `/monitor` opens it too, and **✕ Закрыть** closes it.
+- **▾ More** expands the line in place: a one-minute chart, active sessions with tokens per hour, running jobs, top processes, the render queue. **▴ Less** closes it again. The button stays at the right end of the line in both states.
+- **Open as a side pane**, at the bottom of the expanded view, opens the same data as a side pane. `/monitor` opens it too, and **✕ Close** closes it.
 - `/monitor off` hides the line, `/monitor on` brings it back. `/monitor web` prints the dashboard address.
 - Red means over a limit: VRAM above 90%, a drive with less than 20 GB free, more than 3 active sessions.
-
-The plugin's labels are in Russian for now.
 
 ## The web dashboard
 
@@ -160,7 +178,22 @@ The server works with psutil and nvidia-smi there too, but only Windows 10 was t
 
 ## Гайд на русском
 
-Монитор показывает над полем ввода Claude Code одну строку: CPU, GPU, VRAM и RAM с мини-графиками, свободное место на дисках, сколько чатов Claude сейчас работает, сколько токенов уходит в час и что рендерится. Кнопка **▾ Ещё** раскрывает эту строку на месте: график за минуту, чаты, задачи, процессы.
+Монитор показывает над полем ввода Claude Code одну строку: CPU, GPU, VRAM и RAM с мини-графиками, свободное место на дисках, сколько чатов Claude сейчас работает, сколько токенов уходит в час и что рендерится. Кнопка **▾ Ещё** раскрывает эту строку на месте: график за минуту, чаты, задачи, процессы. С настройкой `lang=ru` все подписи на русском.
+
+**Быстрая установка.** Вставьте в Claude Code (приложение или терминал), он поставит всё сам:
+
+```text
+Установи мне Claude Code Monitor из https://github.com/Leks2000/claude-code-monitor
+1. Склонируй репозиторий в папку в моей домашней директории и выполни: pip install -r requirements.txt
+2. Запусти "python monitor.py" в фоне и проверь, что http://127.0.0.1:8770/api отвечает.
+3. На Windows выполни: powershell -ExecutionPolicy Bypass -File install_autostart.ps1 (чтобы запускался вместе с ПК).
+4. Поставь плагин для всех чатов:
+   claude plugin marketplace add Leks2000/claude-code-monitor
+   claude plugin install pc-monitor@leks2000-tools --scope user --config lang=ru --config "start_command=<полный путь к start_monitor.bat> --quiet"
+5. Скажи, когда закончишь: я открою новый чат и проверю строку.
+```
+
+Если хотите поставить руками, вот шаги.
 
 **1. Сервер.** Нужен Python 3.9+.
 
@@ -176,7 +209,8 @@ python monitor.py
 **2. Строка в Claude.**
 - **Приложение Claude:** **+** у поля ввода, затем **Plugins**, затем **Add marketplace**, введите `Leks2000/claude-code-monitor`. Потом **Add plugin**, выберите **pc-monitor** и откройте новый чат.
 - **Терминал:** `/plugin install pc-monitor --marketplace Leks2000/claude-code-monitor`, на вопрос ответьте `y`, область **user**.
-- **Из скачанной папки:** `claude plugin marketplace add ./claude-code-monitor`, затем `claude plugin install pc-monitor@leks2000-tools --scope user`. Правки в `claude-mod/` подхватятся в следующем чате.
+- **Из скачанной папки:** `claude plugin marketplace add ./claude-code-monitor`, затем `claude plugin install pc-monitor@leks2000-tools --scope user --config lang=ru`. Правки в `claude-mod/` подхватятся в следующем чате.
+- Язык потом меняется так: `/plugin configure pc-monitor`, поле **Language**.
 
 **3. Команды.** `/monitor` открывает панель справа, `/monitor off` и `/monitor on` прячут и возвращают строку, `/monitor web` даёт адрес веб-панели. Веб-панель открывается и с телефона в той же Wi-Fi: `http://<IP-компьютера>:8770`.
 
