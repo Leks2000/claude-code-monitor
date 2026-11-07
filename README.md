@@ -1,11 +1,11 @@
-# Claude Code Monitor: live token usage and PC load dashboard
+﻿# Claude Code Monitor: live token usage and PC load dashboard
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Dependencies: psutil](https://img.shields.io/badge/dependencies-psutil%20only-2ea44f)](requirements.txt)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-**Claude Code Monitor** is a tiny local web dashboard that shows how many **Claude Code** sessions are running right now, how many **tokens** each session burned in the last hour, today and this week, and what your PC is doing: **CPU, RAM, GPU, VRAM, disks**, and which **Blender, ffmpeg, Remotion, ComfyUI or Ollama** jobs are running. One Python file plus one HTML page, refreshed every 5 seconds, readable from your phone.
+**Claude Code Monitor** is a tiny local web dashboard that shows how many **Claude Code** sessions are running right now, how many **tokens** each session burned in the last hour, today and this week, and what your PC is doing: **CPU, RAM, GPU, VRAM, disks**, and which **Blender, ffmpeg, Remotion, ComfyUI or Ollama** jobs are running. One Python file plus one HTML page: CPU, GPU and RAM refresh every second, processes and sessions every 5 seconds, and the page opens on your phone.
 
 ![Claude Code Monitor dashboard: active Claude Code sessions with token usage, GPU and VRAM load, Blender and ffmpeg render jobs](docs/dashboard-en.png)
 
@@ -35,7 +35,7 @@ If you run several Claude Code chats in parallel and keep hitting the weekly lim
 
 **Alerts** (red): VRAM above 90%, a drive with less than 20 GB free, more than 3 active Claude Code sessions. All thresholds can be changed.
 
-**Light on resources**: about 0.3% CPU and 40 MB RAM on a 16-thread desktop. Session logs are read incrementally from the last byte offset. The offsets live in `cache.json`, so after a restart the monitor does not read the logs again.
+**Light on resources**: about 0.4% CPU and 40 MB RAM on a 16-thread desktop at the 1-second refresh. Session logs are read incrementally from the last byte offset. The offsets live in `cache.json`, so after a restart the monitor does not read the logs again.
 
 ## Install
 
@@ -78,6 +78,7 @@ Copy `config.example.json` to `config.json` and change what you need. Every key 
 | `projects_dir` | `~/.claude/projects` | where Claude Code keeps its session logs |
 | `disks` | all fixed drives | for example `["C:\\", "D:\\"]` |
 | `active_minutes` | `5` | a session is active if its log changed within this many minutes |
+| `fast_seconds` | `1` | how often CPU, RAM and GPU refresh (processes and sessions stay at 5 s) |
 | `limits` | `vram_pct 90, disk_gb 20, chats 3` | alert thresholds |
 | `heavy` | Blender `-b`, ffmpeg encode, Remotion | `[process name, text in its command line]` pairs that count as a heavy render |
 | `queue_script` | `"render_gate"` | Python scripts with this name are shown as the render queue |
@@ -112,7 +113,7 @@ curl -s http://127.0.0.1:8770/api | python -c "import json,sys; d=json.load(sys.
 Run the monitor and open the page. The sessions table shows tokens for the last hour and today for each session. The top 5 table ranks sessions over today and over the last 7 days.
 
 **How is this different from ccusage?**
-[ccusage](https://github.com/ryoppippi/ccusage) is a command-line tool that prints daily and monthly usage and cost reports. Claude Code Monitor is a live page refreshed every 5 seconds that puts the sessions active right now next to GPU, VRAM, CPU and the render jobs on the same machine, and it opens on a phone.
+[ccusage](https://github.com/ryoppippi/ccusage) is a command-line tool that prints daily and monthly usage and cost reports. Claude Code Monitor is a live page, refreshed every second, that puts the sessions active right now next to GPU, VRAM, CPU and the render jobs on the same machine, and it opens on a phone.
 
 **Can I watch it inside the Claude desktop app?**
 Yes. Open `http://127.0.0.1:8770` in the app's built-in browser pane and keep it next to your chat.
@@ -121,7 +122,7 @@ Yes. Open `http://127.0.0.1:8770` in the app's built-in browser pane and keep it
 Yes. The GPU tile shows "—" and everything else works.
 
 **Does it slow down renders?**
-No. It runs at below-normal priority, polls processes every 5 seconds and refreshes the expensive memory numbers every 30 seconds.
+No. It runs at below-normal priority. GPU numbers come from one long-running `nvidia-smi` instead of a new process every second. Processes are polled every 5 seconds and the expensive memory numbers every 30 seconds.
 
 ## По-русски
 

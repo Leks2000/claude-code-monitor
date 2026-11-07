@@ -40,6 +40,7 @@ DEFAULTS = {
     "projects_dir": str(Path.home() / ".claude" / "projects"),
     "disks": [],                       # [] = all fixed drives, or e.g. ["C:\\", "D:\\"]
     "active_minutes": 5,               # a session is active if its log changed this recently
+    "fast_seconds": 1,                 # CPU/RAM/GPU refresh; processes and sessions stay at 5 s
     "limits": {"vram_pct": 90, "disk_gb": 20, "chats": 3},
     # a command line counts as a heavy render if the process name contains A and the command line contains B
     "heavy": [["blender", " -b"], ["blender", "--background"], ["ffmpeg", "nvenc"], ["ffmpeg", "libx264"],
@@ -417,6 +418,39 @@ def window_titles(pids):
     return res
 
 
+_JOB = None
+
+
+def tie_to_me(proc):
+    """Windows: put a child into a job that is killed when this process exits (nvidia-smi -lms never ends)."""
+    global _JOB
+    if not WIN:
+        return
+    try:
+        k32 = ctypes.windll.kernel32
+        if _JOB is None:
+            class IO(ctypes.Structure):
+                _fields_ = [(n, ctypes.c_ulonglong) for n in ("r", "w", "o", "rb", "wb", "ob")]
+
+            class Basic(ctypes.Structure):
+                _fields_ = [("a", ctypes.c_longlong), ("b", ctypes.c_longlong), ("LimitFlags", wt.DWORD),
+                            ("c", ctypes.c_size_t), ("d", ctypes.c_size_t), ("e", wt.DWORD),
+                            ("f", ctypes.c_size_t), ("g", wt.DWORD), ("h", wt.DWORD)]
+
+            class Ext(ctypes.Structure):
+                _fields_ = [("basic", Basic), ("io", IO), ("pm", ctypes.c_size_t), ("jm", ctypes.c_size_t),
+                            ("ppm", ctypes.c_size_t), ("pjm", ctypes.c_size_t)]
+            k32.CreateJobObjectW.restype = wt.HANDLE
+            job = k32.CreateJobObjectW(None, None)
+            info = Ext()
+            info.basic.LimitFlags = 0x2000                    # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            k32.SetInformationJobObject(wt.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
+            _JOB = job
+        k32.AssignProcessToJobObject(wt.HANDLE(_JOB), wt.HANDLE(int(proc._handle)))
+    except Exception as e:
+        log("job object: " + str(e))
+
+
 # ---------------------------------------------------------------- system
 WATCH = ("blender", "ffmpeg", "node", "python", "pythonw", "robloxstudio", "ollama")
 
@@ -434,16 +468,47 @@ class System:
                                       if "cdrom" not in p.opts and p.fstype and
                                       not p.mountpoint.startswith(("/boot", "/snap", "/System/Volumes"))]
 
+        self.gpu_last = {"error": "nvidia-smi: no data yet"}
+        threading.Thread(target=self.gpu_stream, daemon=True).start()
+
+    @staticmethod
+    def parse_gpu(line):
+        n, u, mu, mt, t, p = [x.strip() for x in line.split(",")][:6]
+        mu, mt = float(mu), float(mt)
+        return {"name": n.replace("NVIDIA GeForce ", ""), "util": float(u), "vram_used": mu, "vram_total": mt,
+                "vram_pct": round(mu / mt * 100, 1), "temp": float(t), "power": float(p) if p[:1].isdigit() else None}
+
+    def gpu_stream(self):
+        """One long-running nvidia-smi printing a line every second: cheaper than starting it every second."""
+        q = ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
+             "--format=csv,noheader,nounits", f"-lms={int(CFG['fast_seconds'] * 1000)}"]
+        while True:
+            try:
+                p = subprocess.Popen(q, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, creationflags=NO_WIN,
+                                     text=True, encoding="utf-8", errors="replace")
+                tie_to_me(p)
+                for line in p.stdout:
+                    try:
+                        self.gpu_last = self.parse_gpu(line)   # first GPU only: a line per GPU would alternate
+                    except Exception:
+                        pass
+                p.wait()
+                self.gpu_last = {"error": "nvidia-smi exited"}
+            except FileNotFoundError:
+                self.gpu_last = {"error": "nvidia-smi not found"}
+                return
+            except Exception as e:
+                self.gpu_last = {"error": str(e)[:200]}
+            time.sleep(10)
+
     def gpu(self):
-        out = run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
-                   "--format=csv,noheader,nounits"], 8)
-        try:
-            n, u, mu, mt, t, p = [x.strip() for x in out.strip().splitlines()[0].split(",")]
-            mu, mt = float(mu), float(mt)
-            return {"name": n.replace("NVIDIA GeForce ", ""), "util": float(u), "vram_used": mu, "vram_total": mt,
-                    "vram_pct": round(mu / mt * 100, 1), "temp": float(t), "power": float(p) if p[0].isdigit() else None}
-        except Exception:
-            return {"error": out.strip()[:200]}
+        return self.gpu_last
+
+    def fast(self, s):
+        """The cheap numbers, every second: CPU, RAM."""
+        vm = psutil.virtual_memory()
+        return {**s, "cpu": psutil.cpu_percent(None), "ram_used_gb": round((vm.total - vm.available) / 2**30, 1),
+                "ram_total_gb": round(vm.total / 2**30, 1), "ram_pct": vm.percent}
 
     def cmdline(self, p):
         key = (p.pid, p.info.get("create_time"))
@@ -650,19 +715,29 @@ class Collector:
         self.chats = Chats()
         self.sys = System()
         self.data = {"ok": False}
+        self.last = None
         self.bridge = {"t": None, "accounts": [], "error": "not polled yet"}
         self.bridge_t = 0
         self.save_t = time.time()
 
     def loop(self):
+        """Processes and sessions every 5 s, CPU/RAM/GPU every `fast_seconds`."""
         threading.Thread(target=self.chat_loop, daemon=True).start()
+        fast, slow_t = CFG["fast_seconds"], 0
         while True:
             t0 = time.time()
             try:
-                self.tick()
+                if t0 - slow_t >= 5 - fast / 2:
+                    slow_t = t0
+                    self.tick()
+                elif self.last:
+                    s, ch, oll, br = self.last
+                    s = self.sys.fast(s)
+                    self.last = (s, ch, oll, br)
+                    self.data = build(s, self.sys.gpu(), ch, oll, br, t0)
             except Exception:
                 log(traceback.format_exc())
-            time.sleep(max(1.0, 5 - (time.time() - t0)))
+            time.sleep(max(0.2, fast - (time.time() - t0)))
 
     def chat_loop(self):
         while True:
@@ -681,10 +756,11 @@ class Collector:
             self.bridge_t = t0
             threading.Thread(target=self.poll_bridge, daemon=True).start()
         s = self.sys.sample()
-        g = self.sys.gpu()
         ch = self.chats.summary()
-        self.data = build(s, g, ch, ollama() if self.sys.ollama_on else {"on": False, "models": []},
-                          self.bridge if CFG["bridge_cmd"] else None, t0)
+        oll = ollama() if self.sys.ollama_on else {"on": False, "models": []}
+        br = self.bridge if CFG["bridge_cmd"] else None
+        self.last = (s, ch, oll, br)
+        self.data = build(s, self.sys.gpu(), ch, oll, br, t0)
 
     def poll_bridge(self):
         try:

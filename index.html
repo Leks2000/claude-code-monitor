@@ -189,7 +189,7 @@ async function tick(){
     if(d.ok) render(d); else $('meta').textContent = T.loading;
   }catch(e){ $('meta').textContent = T.offline; }
 }
-tick(); setInterval(tick, 5000);
+tick(); setInterval(tick, 1000);
 </script>
 </body>
 </html>
