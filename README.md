@@ -20,6 +20,7 @@ Two parts, both local, both read-only:
 
 1. **`monitor.py`**: a small Python server (psutil plus the standard library) that reads Claude Code's session logs, `nvidia-smi` and the process list, and serves the numbers as JSON and as a web page on `127.0.0.1:8770`.
 2. **The `pc-monitor` plugin** for Claude Code (`claude-mod/`): it reads that JSON once a second and draws the line above the prompt. It works in the Claude desktop app, in the terminal and in the IDE extensions.
+3. **The `side-panel` plugin** (`side-panel/`, optional): a side pane you open with `/panel`, with every project's `STATUS.md` as a card and a "PC now" tab. See [The side panel](#3-optional-the-side-panel-your-projects-at-a-glance).
 
 Nothing is sent anywhere. The server answers only `localhost` and private home-network addresses.
 
@@ -37,7 +38,9 @@ Install Claude Code Monitor for me from https://github.com/Leks2000/claude-code-
 4. Install the plugin for every session:
    claude plugin marketplace add Leks2000/claude-code-monitor
    claude plugin install pc-monitor@leks2000-tools --scope user --config lang=en --config "start_command=<full path to start_monitor.bat> --quiet"
-5. Tell me when it is done; I will open a new chat to see the monitor line.
+5. Optional, the side panel with my projects: claude plugin install side-panel@leks2000-tools --scope user --config lang=en
+   and set "status_roots" in config.json to the folders that hold my projects.
+6. Tell me when it is done; I will open a new chat to see the monitor line.
 ```
 
 Use `lang=ru` for Russian labels. Leave out `start_command` on macOS and Linux.
@@ -92,6 +95,33 @@ Optional settings, in `/plugin configure pc-monitor` or via `--config KEY=VALUE`
 - **Open as a side pane**, at the bottom of the expanded view, opens the same data as a side pane. `/monitor` opens it too, and **✕ Close** closes it.
 - `/monitor off` hides the line, `/monitor on` brings it back. `/monitor web` prints the dashboard address.
 - Red means over a limit: VRAM above 90%, a drive with less than 20 GB free, more than 3 active sessions.
+
+### 3. Optional: the side panel, your projects at a glance
+
+If you keep a `STATUS.md` in each project (what works, what is broken, the next step), the `side-panel` plugin shows all of them in a pane beside the chat. It opens only when you ask: type `/panel`.
+
+**Install** (after step 1):
+
+```bash
+claude plugin marketplace add Leks2000/claude-code-monitor
+claude plugin install side-panel@leks2000-tools --scope user --config lang=en
+```
+
+In the Claude desktop app: **+** next to the prompt box, **Plugins**, **Add plugin**, **side-panel**. Then tell the server where your projects are, in `config.json`:
+
+```json
+{ "status_roots": ["C:\\work", "D:\\video"], "plan_file": "C:\\work\\PLAN.md" }
+```
+
+and restart `monitor.py`. Every key is described under [Configuration](#configuration) and [Project board](#project-board).
+
+**What it shows**
+
+- **Projects**: one framed card per `STATUS.md`, grouped by section (games, bots, sites, apps). A card shows the one line that matters most: what **waits** for you, else what is **broken**, else what comes **next**. A yellow frame means something waits for you or is broken, grey means the file is older than 7 days. **▾** opens the whole card. Filters at the top: **All**, **Waiting on me**, **Broken**, **Stale**.
+- **Plan**: the current section of your plan file, its latest log entry and a channels table, as Markdown. **Ideas**: every `IDEAS.md` and `BACKLOG.md`, one heading per idea, opened with a click. **No STATUS**: project folders that have no `STATUS.md` yet.
+- **PC now**, every 5 seconds: active Claude Code sessions with the first line of each task and tokens for the hour and the day, the top 5 sessions today and this week, CPU, GPU, VRAM and RAM cards with a three-minute graph, free disk space, the top 8 processes, Blender, ffmpeg, Remotion, Python and Roblox Studio jobs, the `render_gate` queue, Ollama and the optional image-bridge status.
+
+**Commands**: `/panel` opens it, `/panel projects` or `/panel pc` opens a tab, `/panel close` (or the pane's ✕) closes it. Settings are the same three as above (`server_url`, `start_command`, `lang`), under `/plugin configure side-panel`.
 
 ## The web dashboard
 
@@ -226,7 +256,14 @@ python monitor.py
 - **Из скачанной папки:** `claude plugin marketplace add ./claude-code-monitor`, затем `claude plugin install pc-monitor@leks2000-tools --scope user --config lang=ru`. Правки в `claude-mod/` подхватятся в следующем чате.
 - Язык потом меняется так: `/plugin configure pc-monitor`, поле **Language**.
 
-**Доска проектов.** Если в `config.json` указать `status_roots` (папки с проектами), сервер читает все `STATUS.md` и отдаёт их на `/api/projects`: что работает, что не работает, что ждёт владельца, следующий шаг, раздел и давность. Плюс план (`plan_file`), каналы (`channels_file`), все `IDEAS.md` / `BACKLOG.md` и папки проектов без `STATUS.md`. Файлы только читаются.
+**Панель проектов (по желанию).** Если в каждом проекте есть `STATUS.md` (что работает, что не работает, следующий шаг), плагин `side-panel` показывает их все в панели справа от чата. Открывается только по команде `/panel`.
+
+```bash
+claude plugin marketplace add Leks2000/claude-code-monitor
+claude plugin install side-panel@leks2000-tools --scope user --config lang=ru
+```
+
+Затем в `config.json` сервера укажите папки с проектами — `"status_roots": ["C:\\work", "D:\\video"]` (по желанию `plan_file`, `channels_file`, `ideas_files`) — и перезапустите `monitor.py`. Вкладка «Проекты»: карточка на каждый `STATUS.md` с одной главной строкой (ждёт тебя, сломано или дальше), жёлтая рамка — что-то ждёт тебя или сломано, серая — файл старше 7 дней, ▾ раскрывает карточку целиком, фильтры «Все», «Ждут меня», «Сломано», «Давно». Ещё есть план, идеи и папки без `STATUS.md`. Вкладка «ПК сейчас» обновляется раз в 5 с: чаты и токены, нагрузка, процессы, рендеры. `/panel close` или ✕ закрывает панель. Файлы только читаются.
 
 **3. Команды.** `/monitor` открывает панель справа, `/monitor off` и `/monitor on` прячут и возвращают строку, `/monitor web` даёт адрес веб-панели. Веб-панель открывается и с телефона в той же Wi-Fi: `http://<IP-компьютера>:8770`.
 

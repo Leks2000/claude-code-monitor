@@ -1,0 +1,46 @@
+{
+  "name": "side-panel",
+  "version": "0.1.0",
+  "description": "A side pane next to the Claude Code chat, opened with /panel: every project's STATUS.md as a card (what waits for you, what is broken, the next step), your plan, ideas and the projects with no STATUS.md, plus a PC-now tab with sessions, tokens, GPU and render jobs.",
+  "author": {
+    "name": "Leks2000",
+    "url": "https://github.com/Leks2000"
+  },
+  "homepage": "https://github.com/Leks2000/claude-code-monitor",
+  "repository": "https://github.com/Leks2000/claude-code-monitor",
+  "license": "MIT",
+  "keywords": [
+    "projects",
+    "status",
+    "dashboard",
+    "side panel",
+    "monitor",
+    "tokens",
+    "gpu"
+  ],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "Monitor server URL",
+      "description": "Where monitor.py serves /api and /api/projects (default http://127.0.0.1:8770)",
+      "default": "http://127.0.0.1:8770"
+    },
+    "start_command": {
+      "type": "string",
+      "title": "Start command",
+      "description": "Optional: what the \"Start server\" button runs, e.g. C:\\tools\\claude-code-monitor\\start_monitor.bat --quiet",
+      "default": ""
+    },
+    "lang": {
+      "type": "string",
+      "title": "Language",
+      "description": "Labels of the panel: en or ru",
+      "default": "en",
+      "options": [
+        "en",
+        "ru"
+      ]
+    }
+  },
+  "types": "./types/index.d.ts"
+}

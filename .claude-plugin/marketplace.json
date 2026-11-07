@@ -6,6 +6,11 @@
       "name": "pc-monitor",
       "source": "./claude-mod",
       "description": "A one-line monitor above the Claude Code prompt: CPU, GPU, VRAM and RAM with live graphs, disks, active sessions and tokens per hour. Needs the monitor.py server from this repository."
+    },
+    {
+      "name": "side-panel",
+      "source": "./side-panel",
+      "description": "A side pane opened with /panel: every project's STATUS.md as a card (what waits for you, what is broken, the next step), your plan and ideas, plus a PC-now tab. Needs the monitor.py server from this repository."
     }
   ]
 }
