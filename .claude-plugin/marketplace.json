@@ -1,0 +1,11 @@
+{
+  "name": "leks2000-tools",
+  "owner": { "name": "Leks2000", "url": "https://github.com/Leks2000" },
+  "plugins": [
+    {
+      "name": "pc-monitor",
+      "source": "./claude-mod",
+      "description": "A one-line monitor above the Claude Code prompt: CPU, GPU, VRAM and RAM with live graphs, disks, active sessions and tokens per hour. Needs the monitor.py server from this repository."
+    }
+  ]
+}

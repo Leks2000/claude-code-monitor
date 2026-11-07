@@ -1,43 +1,31 @@
-﻿# Claude Code Monitor: live token usage and PC load dashboard
+﻿# Claude Code Monitor: token usage, GPU and CPU right above your Claude Code prompt
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Dependencies: psutil](https://img.shields.io/badge/dependencies-psutil%20only-2ea44f)](requirements.txt)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#2-add-the-monitor-line-to-claude-code)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-**Claude Code Monitor** is a tiny local web dashboard that shows how many **Claude Code** sessions are running right now, how many **tokens** each session burned in the last hour, today and this week, and what your PC is doing: **CPU, RAM, GPU, VRAM, disks**, and which **Blender, ffmpeg, Remotion, ComfyUI or Ollama** jobs are running. One Python file plus one HTML page: CPU, GPU and RAM refresh every second, processes and sessions every 5 seconds, and the page opens on your phone.
+**Claude Code Monitor** puts one live line above the Claude Code prompt: **CPU, GPU, VRAM and RAM** with small graphs, free disk space, how many **Claude Code sessions** are running, **tokens per hour**, and the render job keeping your machine busy (Blender, ffmpeg, Remotion, ComfyUI). Click **▾** and the same line opens into a one-minute chart and the details. The same data is also a web dashboard you can open on your phone.
 
-![Claude Code Monitor dashboard: active Claude Code sessions with token usage, GPU and VRAM load, Blender and ffmpeg render jobs](docs/dashboard-en.png)
+![The monitor line above the Claude Code prompt: CPU, GPU, VRAM, RAM with live graphs, disks, sessions and tokens per hour](docs/claude-band1.png)
 
-If you run several Claude Code chats in parallel and keep hitting the weekly limit, or you render video and 3D on the same machine, this page answers "who is eating my tokens and my GPU right now" at a glance.
+![Expanded in place: a one-minute chart of CPU, GPU, VRAM and RAM](docs/claude-band2.png)
 
-## Features
+Built for people who run several Claude Code chats at once and render video or 3D on the same PC. It answers "who is eating my tokens and my GPU right now" without leaving the chat.
 
-**Claude Code sessions**
-- Active sessions: a session counts as active when its log changed in the last 5 minutes.
-- For each session: project folder, session title, the first line of the task, model, tokens in the last hour and today, and how many subagents are running.
-- Top 5 sessions by tokens today and over the last 7 days.
-- Token totals for the last hour, today and the week. Output tokens are shown separately.
-- Duplicate messages are counted once. That covers a reply split into several log lines and history copied into a forked or resumed session.
+## How it works
 
-**PC load**
-- CPU, RAM, GPU utilization, VRAM, GPU temperature and power (`nvidia-smi`), free space on every drive.
-- Top 8 processes by CPU and by memory, grouped by name like Task Manager. Memory is the private working set, the same number as the Task Manager "Memory" column.
+Two parts, both local, both read-only:
 
-**What is running**
-- **Blender**: which `.blend` file, and whether it is a background render, a background script or an open window.
-- **ffmpeg**: the output file.
-- **Remotion**: a render, or Studio only.
-- **Python**: which script is running (ComfyUI, your own pipelines).
-- **Roblox Studio**: the place name, taken from the window title.
-- **Ollama**: the loaded model and its VRAM use (`/api/ps`).
-- **Render queue**: which heavy jobs run now and which `render_gate` scripts are waiting. The rules are in the config.
+1. **`monitor.py`**: a small Python server (psutil plus the standard library) that reads Claude Code's session logs, `nvidia-smi` and the process list, and serves the numbers as JSON and as a web page on `127.0.0.1:8770`.
+2. **The `pc-monitor` plugin** for Claude Code (`claude-mod/`): it reads that JSON once a second and draws the line above the prompt. It works in the Claude desktop app, in the terminal and in the IDE extensions.
 
-**Alerts** (red): VRAM above 90%, a drive with less than 20 GB free, more than 3 active Claude Code sessions. All thresholds can be changed.
-
-**Light on resources**: about 0.4% CPU and 40 MB RAM on a 16-thread desktop at the 1-second refresh. Session logs are read incrementally from the last byte offset. The offsets live in `cache.json`, so after a restart the monitor does not read the logs again.
+Nothing is sent anywhere. The server answers only `localhost` and private home-network addresses.
 
 ## Install
+
+### 1. Run the server
 
 You need Python 3.9 or newer.
 
@@ -48,23 +36,69 @@ pip install -r requirements.txt
 python monitor.py
 ```
 
-Open **http://127.0.0.1:8770**. The first start indexes the last 7 days of Claude Code logs, about a minute per 3 GB. After that it only reads new lines.
+Open http://127.0.0.1:8770 to check it. The first start indexes the last 7 days of Claude Code logs, about a minute per 3 GB. After that it only reads new lines.
 
-### Windows: run in the background and start with Windows
+**Windows, start with the PC:** `powershell -ExecutionPolicy Bypass -File install_autostart.ps1`. This puts a shortcut into your Startup folder, with no admin rights and no system settings changed, plus a **Claude Code Monitor** shortcut on the Desktop. To remove the autostart, press Win+R, type `shell:startup` and delete the shortcut.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File install_autostart.ps1
+### 2. Add the monitor line to Claude Code
+
+**Claude desktop app:** click **+** next to the prompt box, then **Plugins**, then **Add marketplace** and enter `Leks2000/claude-code-monitor`. Then **Add plugin**, choose **pc-monitor**, and open a new chat.
+
+**Terminal (Claude Code CLI):**
+
+```
+/plugin install pc-monitor --marketplace Leks2000/claude-code-monitor
 ```
 
-This puts a shortcut into your Startup folder, with no admin rights and no system settings changed, plus a **Claude Code Monitor** shortcut on the Desktop. `start_monitor.bat` starts the server with `pythonw`, so no console window stays open, and opens the page. To remove the autostart, press Win+R, type `shell:startup` and delete the shortcut.
+Answer `y` to add the marketplace, then pick the **user** scope so the line shows in every session.
 
-### Open it on your phone
+**From the folder you cloned** (edits to `claude-mod/` apply in the next session, no reinstall):
 
-The server also listens on your home network. Open `http://<your-PC-IP>:8770` on a phone connected to the same Wi-Fi; the address is printed at start. Requests from public IP addresses get `403`. On the first start Windows may ask whether Python can accept connections: allow it for **private** networks only. To keep the dashboard local only, set `"lan": false`.
+```bash
+claude plugin marketplace add ./claude-code-monitor
+claude plugin install pc-monitor@leks2000-tools --scope user
+```
 
-### Linux and macOS
+Optional settings, in `/plugin configure pc-monitor` or via `--config KEY=VALUE` on install:
 
-The core works with psutil and nvidia-smi, but only Windows 10 was tested. Window titles (Blender file, Roblox Studio place) are read only on Windows.
+| Setting | Default | What it does |
+|---|---|---|
+| `server_url` | `http://127.0.0.1:8770` | where `monitor.py` runs |
+| `start_command` | empty | what the **Start server** button runs, for example `C:\tools\claude-code-monitor\start_monitor.bat --quiet` |
+
+### Using it
+
+- **▾ Ещё** expands the line in place: a one-minute chart, active sessions with tokens per hour, running jobs, top processes, the render queue. **▴ Свернуть** closes it again. The button stays at the right end of the line in both states.
+- **Открыть панелью справа**, at the bottom of the expanded view, opens the same data as a side pane. `/monitor` opens it too, and **✕ Закрыть** closes it.
+- `/monitor off` hides the line, `/monitor on` brings it back. `/monitor web` prints the dashboard address.
+- Red means over a limit: VRAM above 90%, a drive with less than 20 GB free, more than 3 active sessions.
+
+The plugin's labels are in Russian for now.
+
+## The web dashboard
+
+The server also serves a full page with EN and RU switching. It shows every session's tokens for the hour, today and the week, the top 5 sessions, processes grouped like Task Manager, Ollama models and the render queue. On a phone in the same Wi-Fi, open `http://<your-PC-IP>:8770`; the address is printed at start.
+
+![Claude Code Monitor web dashboard: active Claude Code sessions with token usage, GPU and VRAM load, Blender and ffmpeg render jobs](docs/dashboard-en.png)
+
+## Features
+
+**Claude Code sessions**
+- A session counts as active when its log changed in the last 5 minutes.
+- For each session: project folder, session title, the first line of the task, model, tokens for the last hour and today, running subagents.
+- Top 5 sessions by tokens today and over 7 days, plus totals for the last hour, today and the week. Output tokens are counted separately.
+- Duplicate messages are counted once, including a reply split across several log lines and history copied into a forked or resumed session.
+
+**PC load**
+- CPU, RAM, GPU, VRAM, GPU temperature and power every second. The GPU numbers come from one long-running `nvidia-smi`, which exits together with the monitor.
+- Free space on every drive. Top 8 processes by CPU and by memory, where memory is the private working set, the same as the Task Manager "Memory" column.
+
+**What is running**
+- **Blender**: which `.blend` file, and whether it is a render, a background script or an open window.
+- **ffmpeg**: the output file. **Remotion**: a render or Studio. **Python**: the script, including ComfyUI. **Roblox Studio**: the place name.
+- **Ollama**: the loaded model and its VRAM. **Render queue**: which heavy jobs run now and which `render_gate` scripts are waiting.
+
+**Light**: about 0.4% CPU and 40 MB RAM on a 16-thread desktop. Logs are read from the last byte offset, which is kept in `cache.json` between restarts.
 
 ## Configuration
 
@@ -73,62 +107,80 @@ Copy `config.example.json` to `config.json` and change what you need. Every key 
 | Key | Default | What it does |
 |---|---|---|
 | `port` | `8770` | HTTP port |
-| `lan` | `true` | listen on the home network too (private IPs only) |
-| `lang` | `"auto"` | `"en"`, `"ru"` or `"auto"` (browser language). The page also has an EN/RU switch |
+| `lan` | `true` | also listen on the home network (private IPs only) |
+| `lang` | `"auto"` | dashboard language: `"en"`, `"ru"` or `"auto"` |
 | `projects_dir` | `~/.claude/projects` | where Claude Code keeps its session logs |
 | `disks` | all fixed drives | for example `["C:\\", "D:\\"]` |
 | `active_minutes` | `5` | a session is active if its log changed within this many minutes |
-| `fast_seconds` | `1` | how often CPU, RAM and GPU refresh (processes and sessions stay at 5 s) |
+| `fast_seconds` | `1` | how often CPU, RAM and GPU refresh. Processes and sessions stay at 5 seconds |
 | `limits` | `vram_pct 90, disk_gb 20, chats 3` | alert thresholds |
 | `heavy` | Blender `-b`, ffmpeg encode, Remotion | `[process name, text in its command line]` pairs that count as a heavy render |
 | `queue_script` | `"render_gate"` | Python scripts with this name are shown as the render queue |
-| `project_markers` | `STATUS.md`, `HANDOFF.md`, `CLAUDE.md` | how to spot a project folder when a session runs in a parent folder |
-| `bridge_cmd` | off | an optional status command polled once a minute (image-account limits) |
+| `project_markers` | `STATUS.md`, `HANDOFF.md`, `CLAUDE.md` | how to find the project folder when a session runs in a parent folder |
+| `bridge_cmd` | off | an optional status command polled once a minute |
 
-## How token counting works
+## How tokens are counted
 
-Claude Code writes every session to `~/.claude/projects/<folder>/<session-id>.jsonl`, and every assistant message there has a `usage` block. The monitor adds up `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens` for each message ID into 5-minute buckets. Subagent logs (`<session-id>/subagents/*.jsonl`) are added to their parent session.
+Claude Code writes each session to `~/.claude/projects/<folder>/<session-id>.jsonl`, and every assistant message there carries a `usage` block. For each message ID the monitor adds `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens` into 5-minute buckets. Subagent logs count toward their parent session.
 
-The total includes cache reads, so it gets large quickly: a 150k-token context read 300 times in an hour is 45M tokens. To see how much text the model actually wrote, look at the **Output** column.
+Cache reads are included, so the totals grow fast: a 150k-token context read 300 times in an hour is 45M tokens. To see how much the model actually wrote, look at the output figure.
 
 ## JSON API
 
-`GET /api` returns everything the page shows, as JSON. Scripts and other agents can use it, for example to check VRAM before starting a render:
+`GET /api` returns everything the page and the plugin show, as JSON. You can call it from scripts, for example to check VRAM before a render:
 
 ```bash
 curl -s http://127.0.0.1:8770/api | python -c "import json,sys; d=json.load(sys.stdin); print(d['gpu']['vram_pct'], len(d['chats']['active']))"
 ```
 
-`python monitor.py --demo --port 8771` serves made-up data. All screenshots here come from demo mode.
+`python monitor.py --demo --port 8771` serves made-up data. Every screenshot here comes from demo mode.
 
 ## Privacy
 
-- Read only. The monitor never writes to Claude Code files and never sends anything to the internet.
-- The page shows the first line of each prompt and the command lines of processes. Do not set `lan: true` on a network you do not trust.
-- `cache.json` contains session titles and first prompt lines. It is in `.gitignore`.
+- Read only: nothing is written to Claude Code's files and nothing goes to the internet.
+- The page shows the first line of each prompt and the command lines of processes. Set `"lan": false` on a network you do not trust.
+- `cache.json` holds session titles and first prompt lines. It is in `.gitignore`.
 
 ## FAQ
 
 **How do I see Claude Code token usage per session?**
-Run the monitor and open the page. The sessions table shows tokens for the last hour and today for each session. The top 5 table ranks sessions over today and over the last 7 days.
+Install both parts. The line above the prompt shows the total per hour. Click ▾ for each session's tokens, or open the dashboard for hour, today, week and the top 5.
 
 **How is this different from ccusage?**
-[ccusage](https://github.com/ryoppippi/ccusage) is a command-line tool that prints daily and monthly usage and cost reports. Claude Code Monitor is a live page, refreshed every second, that puts the sessions active right now next to GPU, VRAM, CPU and the render jobs on the same machine, and it opens on a phone.
-
-**Can I watch it inside the Claude desktop app?**
-Yes. Open `http://127.0.0.1:8770` in the app's built-in browser pane and keep it next to your chat.
+[ccusage](https://github.com/ryoppippi/ccusage) is a command-line report of daily and monthly usage and cost. Claude Code Monitor is live, refreshed every second, sits inside Claude Code, and shows the sessions active right now next to the GPU, CPU and the render jobs on the same machine.
 
 **Does it work without an NVIDIA GPU?**
-Yes. The GPU tile shows "—" and everything else works.
+Yes. The GPU and VRAM cells are simply left out.
 
 **Does it slow down renders?**
-No. It runs at below-normal priority. GPU numbers come from one long-running `nvidia-smi` instead of a new process every second. Processes are polled every 5 seconds and the expensive memory numbers every 30 seconds.
+No. It runs at below-normal priority, keeps one `nvidia-smi` running instead of starting a new one every second, and refreshes the expensive memory numbers every 30 seconds.
 
-## По-русски
+**Linux and macOS?**
+The server works with psutil and nvidia-smi there too, but only Windows 10 was tested. Window titles (the Blender file, the Roblox Studio place) are read only on Windows.
 
-Локальная панель: сколько чатов Claude Code активно, сколько токенов каждый потратил за час, сегодня и неделю, загрузка CPU, RAM, GPU, VRAM и дисков. Показывает, кто сейчас рендерит: Blender, ffmpeg, Remotion, ComfyUI, Ollama. Открывается с телефона. Запуск: `pip install -r requirements.txt`, затем `python monitor.py`, потом откройте http://127.0.0.1:8770. Чтобы монитор запускался вместе с Windows, выполните `install_autostart.ps1`. Язык переключается кнопкой EN/RU в шапке.
+## Гайд на русском
 
-![Панель на русском](docs/dashboard-ru.png)
+Монитор показывает над полем ввода Claude Code одну строку: CPU, GPU, VRAM и RAM с мини-графиками, свободное место на дисках, сколько чатов Claude сейчас работает, сколько токенов уходит в час и что рендерится. Кнопка **▾ Ещё** раскрывает эту строку на месте: график за минуту, чаты, задачи, процессы.
+
+**1. Сервер.** Нужен Python 3.9+.
+
+```bash
+git clone https://github.com/Leks2000/claude-code-monitor.git
+cd claude-code-monitor
+pip install -r requirements.txt
+python monitor.py
+```
+
+Проверка: откройте http://127.0.0.1:8770. Чтобы монитор запускался вместе с Windows, выполните `powershell -ExecutionPolicy Bypass -File install_autostart.ps1`: в автозагрузке появится ярлык, права администратора не нужны.
+
+**2. Строка в Claude.**
+- **Приложение Claude:** **+** у поля ввода, затем **Plugins**, затем **Add marketplace**, введите `Leks2000/claude-code-monitor`. Потом **Add plugin**, выберите **pc-monitor** и откройте новый чат.
+- **Терминал:** `/plugin install pc-monitor --marketplace Leks2000/claude-code-monitor`, на вопрос ответьте `y`, область **user**.
+- **Из скачанной папки:** `claude plugin marketplace add ./claude-code-monitor`, затем `claude plugin install pc-monitor@leks2000-tools --scope user`. Правки в `claude-mod/` подхватятся в следующем чате.
+
+**3. Команды.** `/monitor` открывает панель справа, `/monitor off` и `/monitor on` прячут и возвращают строку, `/monitor web` даёт адрес веб-панели. Веб-панель открывается и с телефона в той же Wi-Fi: `http://<IP-компьютера>:8770`.
+
+![Веб-панель на русском](docs/dashboard-ru.png)
 
 ## License
 
