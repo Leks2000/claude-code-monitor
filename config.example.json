@@ -12,5 +12,11 @@
   "queue_script": "render_gate",
   "project_markers": ["STATUS.md", "HANDOFF.md", "CLAUDE.md"],
   "bridge_cmd": [],
-  "bridge_per_account": 3
+  "bridge_per_account": 3,
+  "status_roots": [],
+  "status_depth": 3,
+  "stale_days": 7,
+  "plan_file": "",
+  "channels_file": "",
+  "ideas_files": []
 }

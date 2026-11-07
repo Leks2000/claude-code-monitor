@@ -136,6 +136,20 @@ Copy `config.example.json` to `config.json` and change what you need. Every key 
 | `queue_script` | `"render_gate"` | Python scripts with this name are shown as the render queue |
 | `project_markers` | `STATUS.md`, `HANDOFF.md`, `CLAUDE.md` | how to find the project folder when a session runs in a parent folder |
 | `bridge_cmd` | off | an optional status command polled once a minute |
+| `status_roots` | off | folders to search for `STATUS.md` files: turns on the project board (below) |
+| `status_depth` | `3` | how many folder levels below a root to search; `docs/STATUS.md` counts for the folder above |
+| `status_skip` | `node_modules`, `.git`, `venv`… | folder names never entered |
+| `stale_days` | `7` | a project whose `STATUS.md` is older than this is marked stale |
+| `sections` | games, bots, sites, apps | `[text in the lowercased path, section name]` pairs; the first match wins |
+| `plan_file`, `plan_now`, `plan_log` | off | a plan file, the heading of its current section and of its log (the log's first entry is shown) |
+| `channels_file`, `channels_section` | off | a file and the heading of the section to show as it is (a table, say) |
+| `ideas_files` | none | extra `IDEAS.md` / `BACKLOG.md` files outside the roots |
+
+## Project board
+
+With `status_roots` set, the server also reads every `STATUS.md` under those folders and serves them as `GET /api/projects`: for each project what works, what is broken, what waits for you and the next step (from `## Works` / `## Not working` / `## Next step` headings, two-column tables or `Next step: ...` lines, in English or Russian), its section and how old the file is. It adds the plan and channels sections you point it at, the headings of every `IDEAS.md` and `BACKLOG.md`, and the project folders that have no `STATUS.md`.
+
+Files are only read. The folders are walked once every 10 minutes; in between, known files are checked every 30 seconds and parsed again only when they change. `python projects.py` prints what the board sees.
 
 ## How tokens are counted
 
@@ -145,7 +159,7 @@ Cache reads are included, so the totals grow fast: a 150k-token context read 300
 
 ## JSON API
 
-`GET /api` returns everything the page and the plugin show, as JSON. You can call it from scripts, for example to check VRAM before a render:
+`GET /api` returns everything the page and the plugin show, as JSON (`GET /api/projects` is the project board). You can call it from scripts, for example to check VRAM before a render:
 
 ```bash
 curl -s http://127.0.0.1:8770/api | python -c "import json,sys; d=json.load(sys.stdin); print(d['gpu']['vram_pct'], len(d['chats']['active']))"
@@ -211,6 +225,8 @@ python monitor.py
 - **Терминал:** `/plugin install pc-monitor --marketplace Leks2000/claude-code-monitor`, на вопрос ответьте `y`, область **user**.
 - **Из скачанной папки:** `claude plugin marketplace add ./claude-code-monitor`, затем `claude plugin install pc-monitor@leks2000-tools --scope user --config lang=ru`. Правки в `claude-mod/` подхватятся в следующем чате.
 - Язык потом меняется так: `/plugin configure pc-monitor`, поле **Language**.
+
+**Доска проектов.** Если в `config.json` указать `status_roots` (папки с проектами), сервер читает все `STATUS.md` и отдаёт их на `/api/projects`: что работает, что не работает, что ждёт владельца, следующий шаг, раздел и давность. Плюс план (`plan_file`), каналы (`channels_file`), все `IDEAS.md` / `BACKLOG.md` и папки проектов без `STATUS.md`. Файлы только читаются.
 
 **3. Команды.** `/monitor` открывает панель справа, `/monitor off` и `/monitor on` прячут и возвращают строку, `/monitor web` даёт адрес веб-панели. Веб-панель открывается и с телефона в той же Wi-Fi: `http://<IP-компьютера>:8770`.
 

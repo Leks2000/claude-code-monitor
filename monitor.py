@@ -25,6 +25,8 @@ from pathlib import Path
 
 import psutil
 
+import projects
+
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / "cache.json"
 LOG = HERE / "monitor.log"
@@ -714,6 +716,7 @@ class Collector:
     def __init__(self):
         self.chats = Chats()
         self.sys = System()
+        self.board = projects.Board(CFG)
         self.data = {"ok": False}
         self.last = None
         self.bridge = {"t": None, "accounts": [], "error": "not polled yet"}
@@ -723,6 +726,7 @@ class Collector:
     def loop(self):
         """Processes and sessions every 5 s, CPU/RAM/GPU every `fast_seconds`."""
         threading.Thread(target=self.chat_loop, daemon=True).start()
+        threading.Thread(target=self.board.loop, args=(log,), daemon=True).start()
         fast, slow_t = CFG["fast_seconds"], 0
         while True:
             t0 = time.time()
@@ -848,6 +852,20 @@ def allowed(ip):
         return False
 
 
+_API_CACHE = (None, b"")
+
+
+def api_bytes():
+    """/api body, serialized once per data update: every chat's band asks every second."""
+    global _API_CACHE
+    if DEMO:
+        return json.dumps(demo(), ensure_ascii=False).encode()
+    data = COL.data
+    if _API_CACHE[0] is not data:
+        _API_CACHE = (data, json.dumps(data, ensure_ascii=False).encode())
+    return _API_CACHE[1]
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -865,7 +883,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, b"only home network", "text/plain")
         path = self.path.split("?", 1)[0]
         if path == "/api":
-            data = demo() if DEMO else COL.data
+            return self.send(200, api_bytes(), "application/json; charset=utf-8")
+        if path == "/api/projects":
+            data = {"ok": False, "on": False, "rev": 0} if DEMO else COL.board.public()
             return self.send(200, json.dumps(data, ensure_ascii=False).encode(), "application/json; charset=utf-8")
         if path in ("/", "/index.html"):
             return self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")

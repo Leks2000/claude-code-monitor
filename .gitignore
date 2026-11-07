@@ -5,5 +5,7 @@ monitor.log
 config.json
 STATUS.md
 screenshot_*.jpg
+# a personal Claude mod kept in this folder, not part of the repo
+owner-panel/
 __pycache__/
 *.pyc
